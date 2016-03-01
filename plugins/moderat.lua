@@ -53,7 +53,6 @@ local function automodadd(msg)
 end
 
 local function modadd(msg)
-    -- superuser and admins only (because sudo are always has privilege)
     if not is_admin(msg) then
         return "شما مجوز این بخش را ندارید❌"
     end
