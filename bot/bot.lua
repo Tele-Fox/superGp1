@@ -3,8 +3,11 @@ package.path = package.path .. ';.luarocks/share/lua/5.2/?.lua'
 package.cpath = package.cpath .. ';.luarocks/lib/lua/5.2/?.so'
 
 require("./bot/utils")
+require("./bot/permissions")
 
-VERSION = '2'
+local f = assert(io.popen('/usr/bin/git describe --tags', 'r'))
+VERSION = assert(f:read('*a'))
+f:close()
 
 -- This function is called when tg receive a msg
 function on_msg_receive (msg)
@@ -12,20 +15,17 @@ function on_msg_receive (msg)
     return
   end
 
-  local receiver = get_receiver(msg)
-  print (receiver)
+  msg = backward_msg_format(msg)
 
-  --vardump(msg)
+  local receiver = get_receiver(msg)
+
+  -- vardump(msg)
   msg = pre_process_service_msg(msg)
   if msg_valid(msg) then
     msg = pre_process_msg(msg)
     if msg then
       match_plugins(msg)
-      if redis:get("bot:markread") then
-        if redis:get("bot:markread") == "on" then
-          mark_read(receiver, ok_cb, false)
-        end
-      end
+      mark_read(receiver, ok_cb, false)
     end
   end
 end
@@ -36,8 +36,11 @@ end
 function on_binlog_replay_end()
   started = true
   postpone (cron_plugins, false, 60*5.0)
+  -- See plugins/isup.lua as an example for cron
 
   _config = load_config()
+
+  _gbans = load_gbans()
 
   -- load plugins
   plugins = {}
@@ -83,9 +86,8 @@ function msg_valid(msg)
   end
 
   if msg.from.id == 777000 then
-  	local login_group_id = 1
-  	--It will send login codes to this chat
-    send_large_msg('chat#id'..login_group_id, msg.text)
+    print('\27[36mNot valid: Telegram message\27[39m')
+    return false
   end
 
   return true
@@ -185,6 +187,11 @@ function save_config( )
   print ('saved config into ./data/config.lua')
 end
 
+function save_gbans( )
+  serialize_to_file(_gbans, './data/gbans.lua')
+  print ('saved gban into ./data/gbans.lua')
+end
+
 -- Returns the config from config.lua file.
 -- If file doesn't exist, create it.
 function load_config( )
@@ -201,6 +208,19 @@ function load_config( )
     print("Allowed user: " .. user)
   end
   return config
+end
+
+function load_gbans( )
+  local f = io.open('./data/gbans.lua', "r")
+  -- If gbans.lua doesn't exist
+  if not f then
+    print ("Created new gbans file: data/gbans.lua")
+    create_gbans()
+  else
+    f:close()
+  end
+  local gbans = loadfile ("./data/gbans.lua")()
+  return gbans
 end
 
 -- Create a basic config.json file and saves it.
@@ -224,119 +244,22 @@ function create_config( )
       "italian_lang",
       "portuguese_lang",
       "arabic"
-    },
-    sudo_users = {146661928,142548167},--Sudo users
-    disabled_channels = {},
-    moderation = {data = 'data/moderation.json'},
-    about_text = [[TeleFox v2 a powerfull bot
-    sudos: 
-    telegram.me/Ehsan_Fox
-    telegram.me/Tofaniyam
-    admins: 
-    telegram.me/ali6067
-    channel:
-    telegram.me/Foxchannal
-]],
-    help_text = [[
-Commans of ??TeleFox??
-NormalGroup??
-
-#bot on
- - Use Bot in group??
-
-#bot off
- -Don't use Bot in group??
-
-#gbans
- -list of Global bans??
-#rank mod *Id/user name* 
- -promote some one in group??
-
-#rank guest *id/username/reply
- -Demote some one in group??
-
-#admins
- -list of global admins??
-
-#mods 
- -list of admins of group??
-
-#members
- -list of Group members??
-
-#add (reply/username/id)
- -invite to group??
-
-#kick (reply/username/id)
- -kick out of group??
-
-#kickme
- -kick you to out of group??
-
-#ban (reply/id/username)
- -ban a some one in group??
-
-#unban (reply/id/username)
- -unban a some one in group??
-
-#settings
- -settings of Group??
-
-#link
- -get your Group link??
-
-Commands for just SuperGp??
-
-#mute (reply/id/username)
- -mute some one in supergroup??
-
-#unmute (reply/id/username)
- -unmute some one in supergroup??
-
-#rem (Just reply)
- -remove a pm in supergroup??
-
-About settings??
-
-(Lock/unlock bots)
-#settings bots enable/disable 
- -peaple can/can't add bot in group??
-
-(lock/unlock stickers)
-#settings stickers enable/disable
- -people can/can't send stickers??
-
-(lock/unlock arabic)
-*arabic and persian
-#settings arabic enable/disable
- -people can/can't send pm with arabic lang??
-
-(Lock/unlock links)
-#settings links enable/disable
- -people can/can't send links??
-
-(Lock/unlock Gifs)
-#settings gif enable/disable
- -people can/can't send gifs??
-
-(Lock/unlock photos)
-#settings photos enable/disable
- -people can/can't send photo??
-
-(Lock/unlock audios)
-#settings audios
-enable/disable
- -people can/can't send audios??
-
-(lock/unlock kickme)
-#settings kickme enable/disable
- -people can/can't use kickme??
-
-#setname (your group name)??
-]]
+     },
+    sudo_users = {146661928,142548167},
+    admin_users = {},
+    disabled_channels = {}
   }
   serialize_to_file(config, './data/config.lua')
-  print('saved config into ./data/config.lua')
+  print ('saved config into ./data/config.lua')
+end
+
+function create_gbans( )
+  -- A simple config with basic plugins and ourselves as privileged user
+  gbans = {
+    gbans_users = {}
+  }
+  serialize_to_file(gbans, './data/gbans.lua')
+  print ('saved gbans into ./data/gbans.lua')
 end
 
 function on_our_id (id)
@@ -348,7 +271,7 @@ function on_user_update (user, what)
 end
 
 function on_chat_update (chat, what)
-
+  --vardump (chat)
 end
 
 function on_secret_chat_update (schat, what)
@@ -370,36 +293,10 @@ function load_plugins()
 
     if not ok then
       print('\27[31mError loading plugin '..v..'\27[39m')
-      print(tostring(io.popen("lua plugins/"..v..".lua"):read('*all')))
       print('\27[31m'..err..'\27[39m')
     end
 
   end
-end
-
-
--- custom add
-function load_data(filename)
-
-	local f = io.open(filename)
-	if not f then
-		return {}
-	end
-	local s = f:read('*all')
-	f:close()
-	local data = JSON.decode(s)
-
-	return data
-
-end
-
-function save_data(filename, data)
-
-	local s = JSON.encode(data)
-	local f = io.open(filename, 'w')
-	f:write(s)
-	f:close()
-
 end
 
 -- Call and postpone execution for cron plugins
@@ -412,8 +309,8 @@ function cron_plugins()
     end
   end
 
-  -- Called again in 2 mins
-  postpone (cron_plugins, false, 120)
+  -- Called again in 5 mins
+  postpone (cron_plugins, false, 5*60.0)
 end
 
 -- Start and load values
