@@ -109,8 +109,6 @@ enable/disable
  -people can/can't use kickme⚡️
 
 #setname (your group name)⚡️' 
-  --[[ Checkout https://github.com/Josepdal/DBTeam
-  --GNU GPL v2 license.]]
 end
 
 return {
